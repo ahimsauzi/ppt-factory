@@ -38,6 +38,11 @@ W = Inches(10)
 H = Inches(5.625)
 
 
+def _log(msg: str) -> None:
+    """Progress messages go to stderr so stdout stays clean for --plan-only JSON."""
+    print(msg, file=sys.stderr)
+
+
 # ─────────────────────────────────────────────
 # SHAPE HELPERS
 # ─────────────────────────────────────────────
@@ -276,12 +281,12 @@ def _call_bedrock(system: str, user_msg: str) -> dict:
 
 def generate_plan(topic: str, audience: str = "technical", slide_count: int = 8) -> dict:
     """Generate a new deck plan from a topic via Bedrock."""
-    print(f"[ppt-factory] Calling Bedrock — {slide_count} slides for '{topic}'...")
+    _log(f"[ppt-factory] Calling Bedrock — {slide_count} slides for '{topic}'...")
     plan = _call_bedrock(
         GENERATE_PROMPT,
         f"Create a {slide_count}-slide presentation.\nTopic: {topic}\nAudience: {audience}\nReturn only JSON."
     )
-    print(f"[ppt-factory] Plan received: {len(plan['slides'])} slides")
+    _log(f"[ppt-factory] Plan received: {len(plan['slides'])} slides")
     return plan
 
 
@@ -305,14 +310,14 @@ def extract_pptx_content(source_path: str) -> tuple[str, int]:
 
 def convert_plan(source_path: str) -> dict:
     """Extract content from an existing PPTX and reinterpret via Bedrock."""
-    print(f"[ppt-factory] Extracting: {source_path}")
+    _log(f"[ppt-factory] Extracting: {source_path}")
     content, slide_count = extract_pptx_content(source_path)
-    print(f"[ppt-factory] Extracted {slide_count} slides — calling Bedrock...")
+    _log(f"[ppt-factory] Extracted {slide_count} slides — calling Bedrock...")
     plan = _call_bedrock(
         CONVERT_PROMPT,
         f"Source had {slide_count} slides. Reinterpret into structured JSON.\n\n{content}"
     )
-    print(f"[ppt-factory] Conversion plan: {len(plan['slides'])} slides")
+    _log(f"[ppt-factory] Conversion plan: {len(plan['slides'])} slides")
     return plan
 
 
@@ -325,9 +330,9 @@ def build_pptx(plan: dict, theme_name: str = "meridian", output_path: str = "out
     for slide_data in plan.get("slides", []):
         layout = slide_data.get("layout", "three_cards")
         BUILDERS.get(layout, _three_cards_slide)(prs, slide_data, t)
-        print(f"  [slide {slide_data['number']}] {layout} — {slide_data.get('title', '')[:55]}")
+        _log(f"  [slide {slide_data['number']}] {layout} — {slide_data.get('title', '')[:55]}")
     prs.save(output_path)
-    print(f"[ppt-factory] Saved: {output_path}")
+    _log(f"[ppt-factory] Saved: {output_path}")
 
 
 # ─────────────────────────────────────────────
@@ -374,7 +379,7 @@ examples:
     if args.from_json:
         with open(args.from_json) as f:
             plan = json.load(f)
-        print(f"[ppt-factory] Loaded: {args.from_json}")
+        _log(f"[ppt-factory] Loaded: {args.from_json}")
     elif args.from_pptx:
         plan = convert_plan(args.from_pptx)
     else:
@@ -388,6 +393,6 @@ examples:
     plan_path = output_path.replace(".pptx", "_plan.json")
     with open(plan_path, "w") as f:
         json.dump(plan, f, indent=2)
-    print(f"[ppt-factory] Plan saved: {plan_path}")
+    _log(f"[ppt-factory] Plan saved: {plan_path}")
 
     build_pptx(plan, args.theme, output_path)

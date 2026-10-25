@@ -88,3 +88,14 @@ class TestThemeScaffold:
         scaffold = ast.literal_eval("{" + entry + "}")["x"]
         assert set(scaffold) == set(THEMES["meridian"])
 
+
+class TestPlanOnlyOutput:
+    def test_progress_goes_to_stderr(self, capsys, monkeypatch):
+        import factory
+
+        monkeypatch.setattr(factory, "_call_bedrock", lambda system, user_msg: SAMPLE_PLAN)
+        factory.generate_plan("Any topic", slide_count=5)
+        out, err = capsys.readouterr()
+        assert out == ""
+        assert "[ppt-factory]" in err
+
