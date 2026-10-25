@@ -76,3 +76,15 @@ class TestBuilders:
                 assert os.path.getsize(path) > 10_000, f"{theme_name} output too small"
             finally:
                 os.unlink(path)
+
+
+class TestThemeScaffold:
+    def test_scaffold_keys_match_themes(self):
+        import ast
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+        from new_theme import TEMPLATE
+
+        entry = TEMPLATE.format(name_lower="x", name_title="X", description="d").split("#")[0].strip().rstrip(",")
+        scaffold = ast.literal_eval("{" + entry + "}")["x"]
+        assert set(scaffold) == set(THEMES["meridian"])
+
