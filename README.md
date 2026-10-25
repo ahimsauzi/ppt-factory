@@ -16,7 +16,9 @@ ppt-factory/
 │   └── test_ppt_factory.py  # pytest suite (no AWS credentials required)
 ├── scripts/
 │   └── new_theme.py         # helper: scaffold a new theme
-└── .gitignore
+├── .github/workflows/ci.yml # lint + tests on every push and PR
+├── SECURITY.md
+└── LICENSE
 ```
 
 ---
@@ -115,3 +117,17 @@ pip install -r requirements-dev.txt
 pytest tests/
 ```
 
+`--plan-only` prints only the JSON plan to stdout. Progress messages go to stderr, so
+`> plan.json` produces a clean file.
+
+---
+
+## Security
+
+ppt-factory sends your topic, or the text of a deck you convert, to Amazon Bedrock under your own AWS
+account. Use a least-privilege IAM policy like the one above, and keep credentials in your AWS
+credential chain, never in this repo. See [SECURITY.md](SECURITY.md) for scope and reporting.
+
+## License
+
+[MIT](LICENSE)
