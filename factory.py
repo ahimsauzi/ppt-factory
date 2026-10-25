@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-factory.py — AI-powered presentation builder using claude-opus-4-6 via Amazon Bedrock
+factory.py — AI-powered presentation builder using Claude on Amazon Bedrock
 
 Usage:
     python factory.py --topic "Zero Trust for Financial Services" --theme midnight
@@ -32,8 +32,9 @@ THEMES = {
     "forest":    {"bg_dark": "1A3728", "bg_light": "F4FBF6", "bg_card": "FFFFFF", "bg_card_dark": "22472F", "accent_1": "2C5F2D", "accent_2": "97BC62", "accent_3": "F4A261", "text_dark": "E8F5E9", "text_light": "1A3728", "text_muted": "6B7280", "callout_bg": "1A3728", "callout_text": "C8E6C9", "font": "Calibri"},
 }
 
-# Set PPT_FACTORY_MODEL_ID to the Claude model or inference profile enabled in your Bedrock account.
-BEDROCK_MODEL_ID = os.environ.get("PPT_FACTORY_MODEL_ID", "us.anthropic.claude-opus-4-6-20250514-v1:0")
+# Default: the US cross-region inference profile for Claude Sonnet 5. Override with PPT_FACTORY_MODEL_ID
+# to use another model or inference profile enabled in your Bedrock account.
+BEDROCK_MODEL_ID = os.environ.get("PPT_FACTORY_MODEL_ID", "us.anthropic.claude-sonnet-5")
 
 W = Inches(10)
 H = Inches(5.625)
