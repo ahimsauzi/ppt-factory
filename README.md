@@ -1,6 +1,7 @@
 # ppt-factory
 
-AI-powered presentation builder using **claude-opus-4-6 via Amazon Bedrock**.
+A Python CLI that turns a topic, or an existing deck, into a branded executive presentation using
+Claude on Amazon Bedrock. Every plan the model returns is validated before anything is rendered.
 Single script — no package install required.
 
 ---
@@ -45,7 +46,13 @@ aws configure get region
 ### 3. Enable Claude in Bedrock
 
 ```
-AWS Console → Amazon Bedrock → Model access → Request access → Anthropic Claude claude-opus-4-6
+AWS Console → Amazon Bedrock → Model access → Request access → Anthropic Claude
+```
+
+Then point ppt-factory at the model or inference profile you enabled:
+
+```bash
+export PPT_FACTORY_MODEL_ID="<your Bedrock model or inference profile ID>"
 ```
 
 ### 4. IAM permissions required (minimum)
@@ -93,6 +100,20 @@ python factory.py --topic "AWS Security Hub" --plan-only > plan.json
 python factory.py --from-json plan.json --theme forest
 python factory.py --from-json plan.json --theme teal
 ```
+
+---
+
+## Validation
+
+The model returns a JSON plan, and nothing is rendered until that plan passes `validate_plan()`:
+
+- **Structure:** a title, 1-30 slides, each with a known layout, starting with `title` and ending with `closing`.
+- **Fields:** required text present and non-empty; optional text, if present, is a string; `phase_color` is one of `accent_1`-`accent_3`.
+- **Capacity:** list lengths stay within what each layout can draw (for example, at most 3 timeline phases and 5 items per panel). Content that would be cut off is an error, not a silent drop.
+
+If a Bedrock response fails validation or isn't valid JSON, the model gets **one repair attempt**, with the
+specific errors fed back. If that also fails, the CLI exits with code 2 and writes nothing. Plans loaded
+with `--from-json` and plans passed to `build_pptx()` are validated the same way.
 
 ---
 
