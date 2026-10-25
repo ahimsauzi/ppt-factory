@@ -33,4 +33,4 @@ if __name__ == "__main__":
         name_title=args.name.title(),
         description=args.description,
     ))
-    print(f"→ Add the block above to src/ppt_factory/themes/__init__.py inside THEMES = {{...}}")
+    print("→ Add the block above to src/ppt_factory/themes/__init__.py inside THEMES = {...}")

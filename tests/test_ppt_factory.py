@@ -2,7 +2,6 @@
 Tests for factory.py — run with: pytest tests/
 No AWS credentials required — tests build from the sample plan only.
 """
-import json
 import os
 import sys
 import tempfile
@@ -11,11 +10,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Mock boto3 before importing factory (not needed for build tests)
 from unittest.mock import MagicMock
+
 sys.modules["boto3"] = MagicMock()
 
-from factory import THEMES, BUILDERS, build_pptx, extract_pptx_content
-from pptx import Presentation
-from pptx.util import Inches
+
+from factory import BUILDERS, THEMES, build_pptx
 
 SAMPLE_PLAN = {
     "title": "Test Deck",

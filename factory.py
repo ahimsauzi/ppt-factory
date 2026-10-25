@@ -25,11 +25,11 @@ from pptx.util import Inches, Pt
 # ─────────────────────────────────────────────
 
 THEMES = {
-    "meridian":  dict(bg_dark="0F1F3D", bg_light="F8F9FA", bg_card="FFFFFF", bg_card_dark="162040", accent_1="C0001E", accent_2="1D4ED8", accent_3="065F46", text_dark="FFFFFF", text_light="111827", text_muted="6B7280", callout_bg="0F1F3D", callout_text="E5E7EB", font="Calibri"),
-    "midnight":  dict(bg_dark="1E2761", bg_light="F0F4FF", bg_card="FFFFFF", bg_card_dark="252D6E", accent_1="3B82F6", accent_2="8B5CF6", accent_3="06B6D4", text_dark="E0E7FF", text_light="1E2761", text_muted="6B7280", callout_bg="1E2761", callout_text="CADCFC", font="Calibri"),
-    "teal":      dict(bg_dark="065A82", bg_light="F0FAFA", bg_card="FFFFFF", bg_card_dark="0A7AAF", accent_1="028090", accent_2="00A896", accent_3="02C39A", text_dark="E0F7FA", text_light="065A82", text_muted="64748B", callout_bg="065A82", callout_text="B2EBF2", font="Calibri"),
-    "corporate": dict(bg_dark="212529", bg_light="F8F9FA", bg_card="FFFFFF", bg_card_dark="343A40", accent_1="495057", accent_2="0D6EFD", accent_3="198754", text_dark="F8F9FA", text_light="212529", text_muted="6C757D", callout_bg="212529", callout_text="CED4DA", font="Calibri"),
-    "forest":    dict(bg_dark="1A3728", bg_light="F4FBF6", bg_card="FFFFFF", bg_card_dark="22472F", accent_1="2C5F2D", accent_2="97BC62", accent_3="F4A261", text_dark="E8F5E9", text_light="1A3728", text_muted="6B7280", callout_bg="1A3728", callout_text="C8E6C9", font="Calibri"),
+    "meridian":  {"bg_dark": "0F1F3D", "bg_light": "F8F9FA", "bg_card": "FFFFFF", "bg_card_dark": "162040", "accent_1": "C0001E", "accent_2": "1D4ED8", "accent_3": "065F46", "text_dark": "FFFFFF", "text_light": "111827", "text_muted": "6B7280", "callout_bg": "0F1F3D", "callout_text": "E5E7EB", "font": "Calibri"},
+    "midnight":  {"bg_dark": "1E2761", "bg_light": "F0F4FF", "bg_card": "FFFFFF", "bg_card_dark": "252D6E", "accent_1": "3B82F6", "accent_2": "8B5CF6", "accent_3": "06B6D4", "text_dark": "E0E7FF", "text_light": "1E2761", "text_muted": "6B7280", "callout_bg": "1E2761", "callout_text": "CADCFC", "font": "Calibri"},
+    "teal":      {"bg_dark": "065A82", "bg_light": "F0FAFA", "bg_card": "FFFFFF", "bg_card_dark": "0A7AAF", "accent_1": "028090", "accent_2": "00A896", "accent_3": "02C39A", "text_dark": "E0F7FA", "text_light": "065A82", "text_muted": "64748B", "callout_bg": "065A82", "callout_text": "B2EBF2", "font": "Calibri"},
+    "corporate": {"bg_dark": "212529", "bg_light": "F8F9FA", "bg_card": "FFFFFF", "bg_card_dark": "343A40", "accent_1": "495057", "accent_2": "0D6EFD", "accent_3": "198754", "text_dark": "F8F9FA", "text_light": "212529", "text_muted": "6C757D", "callout_bg": "212529", "callout_text": "CED4DA", "font": "Calibri"},
+    "forest":    {"bg_dark": "1A3728", "bg_light": "F4FBF6", "bg_card": "FFFFFF", "bg_card_dark": "22472F", "accent_1": "2C5F2D", "accent_2": "97BC62", "accent_3": "F4A261", "text_dark": "E8F5E9", "text_light": "1A3728", "text_muted": "6B7280", "callout_bg": "1A3728", "callout_text": "C8E6C9", "font": "Calibri"},
 }
 
 BEDROCK_MODEL_ID = "us.anthropic.claude-opus-4-6-20250514-v1:0"
@@ -296,12 +296,10 @@ def extract_pptx_content(source_path: str) -> tuple[str, int]:
                 text = shape.text_frame.text.strip()
                 if text:
                     lines.append(text)
-        try:
+        if slide.has_notes_slide:
             notes = slide.notes_slide.notes_text_frame.text.strip()
             if notes:
                 lines.append(f"[NOTES]: {notes[:300]}")
-        except Exception:
-            pass
     return "\n".join(lines), len(prs.slides)
 
 
