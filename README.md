@@ -49,10 +49,11 @@ aws configure get region
 AWS Console → Amazon Bedrock → Model access → Request access → Anthropic Claude
 ```
 
-Then point ppt-factory at the model or inference profile you enabled:
+By default ppt-factory calls **Claude Sonnet 5** through the US cross-region inference profile
+`us.anthropic.claude-sonnet-5`. To use a different model or profile:
 
 ```bash
-export PPT_FACTORY_MODEL_ID="<your Bedrock model or inference profile ID>"
+export PPT_FACTORY_MODEL_ID="<Bedrock model or inference profile ID>"
 ```
 
 ### 4. IAM permissions required (minimum)
@@ -63,10 +64,16 @@ export PPT_FACTORY_MODEL_ID="<your Bedrock model or inference profile ID>"
   "Statement": [{
     "Effect": "Allow",
     "Action": "bedrock:InvokeModel",
-    "Resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-4-6*"
+    "Resource": [
+      "arn:aws:bedrock:*:<ACCOUNT_ID>:inference-profile/us.anthropic.claude-sonnet-5",
+      "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5"
+    ]
   }]
 }
 ```
+
+A cross-region inference profile routes each call to one of several US regions, so the policy allows
+the profile and the underlying model in any region. Replace `<ACCOUNT_ID>` with your AWS account ID.
 
 ---
 
