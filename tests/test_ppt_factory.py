@@ -2,6 +2,7 @@
 Tests for factory.py — run with: pytest tests/
 No AWS credentials required — tests build from the sample plan only.
 """
+import json
 import os
 import sys
 import tempfile
@@ -99,3 +100,152 @@ class TestPlanOnlyOutput:
         assert out == ""
         assert "[ppt-factory]" in err
 
+
+
+def _plan(**slide_overrides):
+    """A deep copy of SAMPLE_PLAN with one slide (by index) replaced."""
+    import copy
+
+    plan = copy.deepcopy(SAMPLE_PLAN)
+    for idx, slide in slide_overrides.items():
+        plan["slides"][int(idx.lstrip("s"))] = slide
+    return plan
+
+
+class TestValidatePlan:
+    def test_sample_plan_is_valid(self):
+        from factory import validate_plan
+
+        assert validate_plan(SAMPLE_PLAN) == []
+
+    def test_rejects_non_object(self):
+        from factory import validate_plan
+
+        assert validate_plan([]) == ["plan must be a JSON object"]
+
+    def test_rejects_missing_slides(self):
+        from factory import validate_plan
+
+        assert "plan: missing 'slides'" in validate_plan({"title": "x"})
+
+    def test_rejects_unknown_layout(self):
+        from factory import validate_plan
+
+        errors = validate_plan(_plan(s2={"layout": "pie_chart", "title": "x"}))
+        assert any("unknown layout 'pie_chart'" in e for e in errors)
+
+    def test_rejects_missing_title(self):
+        from factory import validate_plan
+
+        slide = dict(SAMPLE_PLAN["slides"][1])
+        del slide["title"]
+        assert any("missing 'title'" in e for e in validate_plan(_plan(s1=slide)))
+
+    def test_rejects_content_the_builder_would_drop(self):
+        from factory import validate_plan
+
+        slide = dict(SAMPLE_PLAN["slides"][3])
+        slide["phases"] = slide["phases"] * 2  # 6 phases, the timeline renders at most 3
+        assert any("'phases' has 6 items, expected 1-3" in e for e in validate_plan(_plan(s3=slide)))
+
+    def test_rejects_bad_phase_color(self):
+        from factory import validate_plan
+
+        slide = {**SAMPLE_PLAN["slides"][1], "cards": [{"heading": "h", "body": "b", "phase_color": "red"}]}
+        assert any("phase_color 'red'" in e for e in validate_plan(_plan(s1=slide)))
+
+    def test_rejects_non_string_text(self):
+        from factory import validate_plan
+
+        slide = {**SAMPLE_PLAN["slides"][1], "callout": 42}
+        assert any("'callout' must be a non-empty string" in e for e in validate_plan(_plan(s1=slide)))
+
+    def test_requires_title_first_and_closing_last(self):
+        from factory import validate_plan
+
+        plan = _plan()
+        plan["slides"] = plan["slides"][1:-1]
+        errors = validate_plan(plan)
+        assert "slide 1: a deck must start with a 'title' slide" in errors
+        assert any("must end with a 'closing' slide" in e for e in errors)
+
+
+class TestBuildRefusesInvalid:
+    def test_build_rejects_invalid_plan(self):
+        import pytest
+
+        from factory import PlanValidationError
+
+        with pytest.raises(PlanValidationError):
+            build_pptx({"title": "x", "slides": []}, "teal", os.devnull)
+
+    def test_build_rejects_unknown_theme(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="unknown theme"):
+            build_pptx(SAMPLE_PLAN, "neon", os.devnull)
+
+
+class TestRepairLoop:
+    def _fake(self, monkeypatch, responses):
+        import factory
+
+        calls = []
+
+        def fake_call(system, user_msg):
+            calls.append(user_msg)
+            result = responses[len(calls) - 1]
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        monkeypatch.setattr(factory, "_call_bedrock", fake_call)
+        return calls
+
+    def test_valid_first_response_makes_one_call(self, monkeypatch):
+        import factory
+
+        calls = self._fake(monkeypatch, [SAMPLE_PLAN])
+        assert factory.generate_plan("t", slide_count=5) == SAMPLE_PLAN
+        assert len(calls) == 1
+
+    def test_invalid_response_is_repaired_with_the_errors(self, monkeypatch):
+        import factory
+
+        calls = self._fake(monkeypatch, [{"title": "x", "slides": []}, SAMPLE_PLAN])
+        assert factory.generate_plan("t", slide_count=5) == SAMPLE_PLAN
+        assert len(calls) == 2
+        assert "was rejected" in calls[1] and "'slides' has 0 items" in calls[1]
+
+    def test_invalid_json_is_repaired(self, monkeypatch):
+        import factory
+
+        calls = self._fake(monkeypatch, [json.JSONDecodeError("bad", "x", 0), SAMPLE_PLAN])
+        assert factory.generate_plan("t", slide_count=5) == SAMPLE_PLAN
+        assert "not valid JSON" in calls[1]
+
+    def test_gives_up_after_one_repair(self, monkeypatch):
+        import pytest
+
+        import factory
+
+        bad = {"title": "x", "slides": []}
+        self._fake(monkeypatch, [bad, bad])
+        with pytest.raises(factory.PlanValidationError):
+            factory.generate_plan("t", slide_count=5)
+
+
+class TestCli:
+    def test_from_json_rejects_invalid_plan_with_exit_2(self, tmp_path):
+        import subprocess
+
+        bad = tmp_path / "bad.json"
+        bad.write_text(json.dumps({"title": "x", "slides": [{"layout": "pie_chart", "title": "y"}]}))
+        root = os.path.join(os.path.dirname(__file__), "..")
+        result = subprocess.run(
+            [sys.executable, os.path.join(root, "factory.py"), "--from-json", str(bad), "--output", str(tmp_path / "o.pptx")],
+            capture_output=True, text=True, check=False,
+        )
+        assert result.returncode == 2
+        assert "unknown layout 'pie_chart'" in result.stderr
+        assert not (tmp_path / "o.pptx").exists()

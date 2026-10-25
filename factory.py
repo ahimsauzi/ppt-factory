@@ -32,7 +32,8 @@ THEMES = {
     "forest":    {"bg_dark": "1A3728", "bg_light": "F4FBF6", "bg_card": "FFFFFF", "bg_card_dark": "22472F", "accent_1": "2C5F2D", "accent_2": "97BC62", "accent_3": "F4A261", "text_dark": "E8F5E9", "text_light": "1A3728", "text_muted": "6B7280", "callout_bg": "1A3728", "callout_text": "C8E6C9", "font": "Calibri"},
 }
 
-BEDROCK_MODEL_ID = "us.anthropic.claude-opus-4-6-20250514-v1:0"
+# Set PPT_FACTORY_MODEL_ID to the Claude model or inference profile enabled in your Bedrock account.
+BEDROCK_MODEL_ID = os.environ.get("PPT_FACTORY_MODEL_ID", "us.anthropic.claude-opus-4-6-20250514-v1:0")
 
 W = Inches(10)
 H = Inches(5.625)
@@ -216,6 +217,125 @@ BUILDERS = {
 
 
 # ─────────────────────────────────────────────
+# PLAN VALIDATION
+# ─────────────────────────────────────────────
+# The limits mirror what the slide builders can render. Builders slice lists
+# (items[:5], cards[:3]), so anything over a limit would be dropped silently;
+# validation turns that into an error instead.
+
+ACCENTS = {"accent_1", "accent_2", "accent_3"}
+MAX_SLIDES = 30
+
+
+class PlanValidationError(ValueError):
+    """Raised when a plan does not match the schema the slide builders need."""
+
+    def __init__(self, errors: list[str]):
+        super().__init__("invalid plan:\n  - " + "\n  - ".join(errors))
+        self.errors = errors
+
+
+def _check_str(errors, obj, key, where, required=False):
+    val = obj.get(key)
+    if val is None:
+        if required:
+            errors.append(f"{where}: missing '{key}'")
+    elif not isinstance(val, str) or not val.strip():
+        errors.append(f"{where}: '{key}' must be a non-empty string")
+
+
+def _check_list(errors, obj, key, where, lo, hi, required=False):
+    val = obj.get(key)
+    if val is None:
+        if required:
+            errors.append(f"{where}: missing '{key}'")
+        return []
+    if not isinstance(val, list):
+        errors.append(f"{where}: '{key}' must be a list")
+        return []
+    if not lo <= len(val) <= hi:
+        errors.append(f"{where}: '{key}' has {len(val)} items, expected {lo}-{hi}")
+    return val
+
+
+def _check_objects(errors, items, where, required_keys, optional_keys=()):
+    for j, item in enumerate(items, 1):
+        at = f"{where} item {j}"
+        if not isinstance(item, dict):
+            errors.append(f"{at}: must be a JSON object")
+            continue
+        for key in required_keys:
+            _check_str(errors, item, key, at, required=True)
+        for key in optional_keys:
+            _check_str(errors, item, key, at)
+        color = item.get("phase_color")
+        if color is not None and color not in ACCENTS:
+            errors.append(f"{at}: phase_color {color!r} must be one of {sorted(ACCENTS)}")
+
+
+def _check_strings(errors, items, where):
+    for j, item in enumerate(items, 1):
+        if not isinstance(item, str) or not item.strip():
+            errors.append(f"{where} item {j}: must be a non-empty string")
+
+
+def validate_plan(plan) -> list[str]:
+    """Return every schema problem in a plan. An empty list means it is safe to render."""
+    if not isinstance(plan, dict):
+        return ["plan must be a JSON object"]
+    errors = []
+    _check_str(errors, plan, "title", "plan", required=True)
+    slides = _check_list(errors, plan, "slides", "plan", 1, MAX_SLIDES, required=True)
+    for i, slide in enumerate(slides, 1):
+        where = f"slide {i}"
+        if not isinstance(slide, dict):
+            errors.append(f"{where}: must be a JSON object")
+            continue
+        layout = slide.get("layout")
+        if layout not in BUILDERS:
+            errors.append(f"{where}: unknown layout {layout!r}, expected one of {sorted(BUILDERS)}")
+            continue
+        where = f"slide {i} ({layout})"
+        _check_str(errors, slide, "title", where, required=True)
+        for key in ("subtitle", "speaker_notes"):
+            _check_str(errors, slide, key, where)
+        if layout == "title":
+            _check_str(errors, slide, "speaker_line", where)
+        elif layout == "three_cards":
+            cards = _check_list(errors, slide, "cards", where, 1, 4, required=True)
+            _check_objects(errors, cards, f"{where} cards", ("heading", "body"), ("badge",))
+            _check_str(errors, slide, "callout", where)
+        elif layout == "two_column":
+            for side in ("left_panel", "right_panel"):
+                panel = slide.get(side)
+                if not isinstance(panel, dict):
+                    errors.append(f"{where}: '{side}' must be a JSON object")
+                    continue
+                _check_str(errors, panel, "heading", f"{where} {side}", required=True)
+                items = _check_list(errors, panel, "items", f"{where} {side}", 1, 5, required=True)
+                _check_objects(errors, items, f"{where} {side}", ("label",), ("description",))
+            _check_str(errors, slide, "quote", where)
+        elif layout == "timeline":
+            phases = _check_list(errors, slide, "phases", where, 1, 3, required=True)
+            _check_objects(errors, phases, f"{where} phases", ("heading",), ("label", "timeframe", "outcome"))
+            for j, phase in enumerate(phases, 1):
+                if isinstance(phase, dict):
+                    steps = _check_list(errors, phase, "items", f"{where} phase {j}", 0, 5)
+                    _check_strings(errors, steps, f"{where} phase {j}")
+        elif layout == "closing":
+            cards = _check_list(errors, slide, "cards", where, 0, 3)
+            _check_objects(errors, cards, f"{where} cards", ("heading",), ("body", "icon"))
+            _check_str(errors, slide, "framework_title", where)
+            takeaways = _check_list(errors, slide, "framework_items", where, 0, 3)
+            _check_strings(errors, takeaways, f"{where} framework_items")
+    if slides and isinstance(slides[0], dict) and slides[0].get("layout") != "title":
+        errors.append("slide 1: a deck must start with a 'title' slide")
+    if slides and isinstance(slides[-1], dict) and slides[-1].get("layout") != "closing":
+        errors.append(f"slide {len(slides)}: a deck must end with a 'closing' slide")
+    return errors
+
+
+# ─────────────────────────────────────────────
 # BEDROCK PROMPTS
 # ─────────────────────────────────────────────
 
@@ -248,6 +368,9 @@ phase_color values: accent_1 | accent_2 | accent_3
 
 Use the same schema as generation — same fields, same structure."""
 
+# The conversion prompt reuses the generation schema so both paths produce the same shape.
+CONVERT_PROMPT += "\n\n" + GENERATE_PROMPT[GENERATE_PROMPT.index("Schema:"):]
+
 
 # ─────────────────────────────────────────────
 # BEDROCK CALL
@@ -275,6 +398,31 @@ def _call_bedrock(system: str, user_msg: str) -> dict:
     return json.loads(raw)
 
 
+def _plan_from_model(system: str, user_msg: str) -> dict:
+    """Ask Bedrock for a plan and validate it, giving the model one chance to repair a bad response."""
+    try:
+        plan = _call_bedrock(system, user_msg)
+        errors = validate_plan(plan)
+    except json.JSONDecodeError as e:
+        errors = [f"response was not valid JSON: {e}"]
+    if not errors:
+        return plan
+    _log(f"[ppt-factory] Plan failed validation ({len(errors)} issue(s)) — asking the model to repair it...")
+    repair_msg = (
+        f"{user_msg}\n\nYour previous response was rejected for these reasons:\n- "
+        + "\n- ".join(errors)
+        + "\nReturn the complete corrected JSON only."
+    )
+    try:
+        plan = _call_bedrock(system, repair_msg)
+    except json.JSONDecodeError as e:
+        raise PlanValidationError([f"response was not valid JSON: {e}"]) from e
+    errors = validate_plan(plan)
+    if errors:
+        raise PlanValidationError(errors)
+    return plan
+
+
 # ─────────────────────────────────────────────
 # PUBLIC FUNCTIONS
 # ─────────────────────────────────────────────
@@ -282,7 +430,7 @@ def _call_bedrock(system: str, user_msg: str) -> dict:
 def generate_plan(topic: str, audience: str = "technical", slide_count: int = 8) -> dict:
     """Generate a new deck plan from a topic via Bedrock."""
     _log(f"[ppt-factory] Calling Bedrock — {slide_count} slides for '{topic}'...")
-    plan = _call_bedrock(
+    plan = _plan_from_model(
         GENERATE_PROMPT,
         f"Create a {slide_count}-slide presentation.\nTopic: {topic}\nAudience: {audience}\nReturn only JSON."
     )
@@ -313,7 +461,7 @@ def convert_plan(source_path: str) -> dict:
     _log(f"[ppt-factory] Extracting: {source_path}")
     content, slide_count = extract_pptx_content(source_path)
     _log(f"[ppt-factory] Extracted {slide_count} slides — calling Bedrock...")
-    plan = _call_bedrock(
+    plan = _plan_from_model(
         CONVERT_PROMPT,
         f"Source had {slide_count} slides. Reinterpret into structured JSON.\n\n{content}"
     )
@@ -322,15 +470,20 @@ def convert_plan(source_path: str) -> dict:
 
 
 def build_pptx(plan: dict, theme_name: str = "meridian", output_path: str = "output.pptx") -> None:
-    """Render a plan dict to a .pptx file using the named theme."""
+    """Validate a plan, then render it to a .pptx file using the named theme."""
+    if theme_name not in THEMES:
+        raise ValueError(f"unknown theme {theme_name!r}, expected one of {sorted(THEMES)}")
+    errors = validate_plan(plan)
+    if errors:
+        raise PlanValidationError(errors)
     t = THEMES[theme_name]
     prs = Presentation()
     prs.slide_width = W
     prs.slide_height = H
-    for slide_data in plan.get("slides", []):
-        layout = slide_data.get("layout", "three_cards")
-        BUILDERS.get(layout, _three_cards_slide)(prs, slide_data, t)
-        _log(f"  [slide {slide_data['number']}] {layout} — {slide_data.get('title', '')[:55]}")
+    for i, slide_data in enumerate(plan["slides"], 1):
+        layout = slide_data["layout"]
+        BUILDERS[layout](prs, slide_data, t)
+        _log(f"  [slide {i}] {layout} — {slide_data['title'][:55]}")
     prs.save(output_path)
     _log(f"[ppt-factory] Saved: {output_path}")
 
@@ -375,15 +528,22 @@ examples:
         slug = (args.topic or "deck")[:40].lower().replace(" ", "_").replace("/", "_")
         output_path = f"{slug}_{args.theme}.pptx"
 
-    # Get or load plan
-    if args.from_json:
-        with open(args.from_json) as f:
-            plan = json.load(f)
-        _log(f"[ppt-factory] Loaded: {args.from_json}")
-    elif args.from_pptx:
-        plan = convert_plan(args.from_pptx)
-    else:
-        plan = generate_plan(args.topic, args.audience, args.slides)
+    # Get or load plan; every path is validated before anything is written
+    try:
+        if args.from_json:
+            with open(args.from_json) as f:
+                plan = json.load(f)
+            _log(f"[ppt-factory] Loaded: {args.from_json}")
+            errors = validate_plan(plan)
+            if errors:
+                raise PlanValidationError(errors)
+        elif args.from_pptx:
+            plan = convert_plan(args.from_pptx)
+        else:
+            plan = generate_plan(args.topic, args.audience, args.slides)
+    except PlanValidationError as e:
+        print(f"[ppt-factory] {e}", file=sys.stderr)
+        sys.exit(2)
 
     if args.plan_only:
         print(json.dumps(plan, indent=2))
